@@ -157,10 +157,9 @@ app.post('/api/gemini/voice-command', async (req: Request, res: Response) => {
     }
 
     const clean = transcript.trim();
-    const ai = getGeminiClient();
-
-    if (ai) {
-      const prompt = `You are Cosmos AI's real-time voice commanding and spoken dialogue assistant.
+    if (getGeminiClient()) {
+      try {
+        const prompt = `You are Cosmos AI's real-time voice commanding and spoken dialogue assistant.
 The student spoke: "${clean}"
 Current screen view: "${currentView || '3step'}"
 
@@ -172,18 +171,20 @@ Analyze their command or question. Return a strictly valid JSON object conformin
   "pomodoroMinutes": 25
 }`;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.8-flash',
-        contents: prompt,
-        config: {
+        const text = await generateGeminiContent({
+          contents: prompt,
           systemInstruction: 'You are Cosmos AI voice dispatcher. Always return valid JSON.',
           responseMimeType: 'application/json',
           temperature: 0.2,
-        },
-      });
+        });
 
-      const parsed = JSON.parse(response.text || '{}');
-      return res.json({ result: parsed, isAiGenerated: true });
+        const parsed = JSON.parse(text || '{}');
+        if (parsed && parsed.action && parsed.speechReply) {
+          return res.json({ result: parsed, isAiGenerated: true });
+        }
+      } catch (voiceAiErr: any) {
+        console.warn('Voice command AI fallback triggered:', voiceAiErr?.message || voiceAiErr);
+      }
     }
 
     // High quality rule-based voice command dispatch
@@ -281,18 +282,21 @@ Provide a structured plan formatted as JSON with this exact structure:
   "pipAdvice": "Encouraging tip from Pip"
 }`;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.8-flash',
-        contents: prompt,
-        config: {
+      try {
+        const text = await generateGeminiContent({
+          contents: prompt,
           systemInstruction: 'You are Pip, an expert curriculum designer. Return only valid JSON adhering to the requested schema.',
           responseMimeType: 'application/json',
           temperature: 0.4,
-        },
-      });
+        });
 
-      const parsed = JSON.parse(response.text || '{}');
-      return res.json({ plan: parsed, isAiGenerated: true });
+        const parsed = JSON.parse(text || '{}');
+        if (parsed && parsed.title && parsed.milestones) {
+          return res.json({ plan: parsed, isAiGenerated: true });
+        }
+      } catch (planAiErr: any) {
+        console.warn('Study plan AI fallback triggered:', planAiErr?.message || planAiErr);
+      }
     }
 
     // Default fallback study plan
@@ -409,18 +413,21 @@ Return a comprehensive JSON analysis:
   ]
 }`;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.8-flash',
-        contents: prompt,
-        config: {
+      try {
+        const text = await generateGeminiContent({
+          contents: prompt,
           systemInstruction: 'You are Pip, an exam analytics specialist. Analyze past questions with precision and generate diagnostic quizzes.',
           responseMimeType: 'application/json',
           temperature: 0.3,
-        },
-      });
+        });
 
-      const parsed = JSON.parse(response.text || '{}');
-      return res.json({ analysis: parsed, isAiGenerated: true });
+        const parsed = JSON.parse(text || '{}');
+        if (parsed && parsed.highWeightageTopics && parsed.diagnosticQuiz) {
+          return res.json({ analysis: parsed, isAiGenerated: true });
+        }
+      } catch (pyqAiErr: any) {
+        console.warn('PYQ analysis AI fallback triggered:', pyqAiErr?.message || pyqAiErr);
+      }
     }
 
     // Realistic default fallback PYQ analysis
@@ -727,16 +734,14 @@ Generate a comprehensive JSON response conforming to this exact schema:
 }`;
 
       try {
-        const response = await ai.models.generateContent({
-          model: 'gemini-3.8-flash',
+        const text = await generateGeminiContent({
           contents: prompt,
-          config: {
-            responseMimeType: 'application/json',
-            temperature: 0.3,
-          },
+          systemInstruction: 'You are an expert university professor and cognitive curriculum designer. Return only valid JSON conforming strictly to the schema.',
+          responseMimeType: 'application/json',
+          temperature: 0.3,
         });
 
-        const parsed = JSON.parse(response.text || '{}');
+        const parsed = JSON.parse(text || '{}');
         if (parsed && parsed.chapters && Array.isArray(parsed.chapters) && parsed.chapters.length >= 3) {
           return res.json({ module: parsed, isAiGenerated: true });
         }
@@ -1043,17 +1048,21 @@ Return a valid JSON array of schedule slots conforming to:
   }
 ]`;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.8-flash',
-        contents: prompt,
-        config: {
+      try {
+        const text = await generateGeminiContent({
+          contents: prompt,
+          systemInstruction: 'You are a university academic registrar and curriculum assistant. Return only a valid JSON array.',
           responseMimeType: 'application/json',
           temperature: 0.2,
-        },
-      });
+        });
 
-      const parsed = JSON.parse(response.text || '[]');
-      return res.json({ slots: parsed, isAiGenerated: true });
+        const parsed = JSON.parse(text || '[]');
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return res.json({ slots: parsed, isAiGenerated: true });
+        }
+      } catch (ttErr: any) {
+        console.warn('Timetable parse AI fallback triggered:', ttErr?.message || ttErr);
+      }
     }
 
     // High quality university semester fallback slots with rich class topics

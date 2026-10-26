@@ -48,6 +48,7 @@ import { AccessibilityModule } from './components/AccessibilityModule';
 import { DockedAITutor } from './components/DockedAITutor';
 import { FuturisticBackground } from './components/FuturisticBackground';
 import { AccessibilityOverlay } from './components/AccessibilityOverlay';
+import { LiveVoiceCommander } from './components/LiveVoiceCommander';
 
 import {
   UserProfile,
@@ -189,6 +190,23 @@ export default function App() {
   const [visualAlertActive, setVisualAlertActive] = useState(false);
   const [tutorInitialPrompt, setTutorInitialPrompt] = useState<string | undefined>(undefined);
   const [pomodoroOpen, setPomodoroOpen] = useState(false);
+  const [voiceCommanderOpen, setVoiceCommanderOpen] = useState(false);
+
+  // Global voice shortcut (Alt+V or when pressing microphone)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (
+        e.altKey &&
+        (e.key === 'v' || e.key === 'V') &&
+        !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)
+      ) {
+        e.preventDefault();
+        setVoiceCommanderOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Sync settings & audio
   useEffect(() => {
@@ -367,8 +385,15 @@ export default function App() {
       case 'START_POMODORO':
         setPomodoroOpen(true);
         break;
+      case 'EXPLAIN_CONCEPT':
+        setCurrentView('tutor');
+        if (targetTopic) setTutorInitialPrompt(targetTopic);
+        break;
       case 'READ_PAGE':
         pipSpeech.speak('Cosmos AI screen reader active. Viewing current university study module.');
+        break;
+      case 'GENERAL_TALK':
+        if (speechReply) pipSpeech.speak(speechReply);
         break;
       default:
         break;
@@ -454,6 +479,15 @@ export default function App() {
         onClose={() => setPomodoroOpen(false)}
         onSessionComplete={handlePomodoroComplete}
         targetTask={tasks.find((t) => !t.done)?.title || 'Mastering Course Concepts'}
+      />
+
+      {/* 4.1 LIVE VOICE COMMANDER HUD */}
+      <LiveVoiceCommander
+        isOpen={voiceCommanderOpen}
+        onClose={() => setVoiceCommanderOpen(false)}
+        currentView={currentView}
+        onExecuteAction={handleVoiceCommandAction}
+        ttsEnabled={settings.ttsEnabled}
       />
 
       {/* 5. MAIN APPBAR */}
@@ -634,12 +668,14 @@ export default function App() {
             <button
               onClick={() => {
                 pipAudio.playClick();
-                setCurrentView('accessibility');
+                setVoiceCommanderOpen(true);
               }}
-              className="p-2 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 hover:bg-cyan-500 hover:text-black transition"
-              title="Voice Commanding & Accessibility Suite"
+              className="px-2.5 py-1.5 rounded-xl bg-cyan-500/15 border border-cyan-500/40 text-cyan-300 hover:bg-cyan-500 hover:text-black transition flex items-center gap-1.5 shadow-sm shadow-cyan-500/20 group"
+              title="Live Voice Commanding HUD (Alt+V)"
             >
-              <Mic size={16} />
+              <Mic size={15} className="group-hover:scale-110 transition text-cyan-400 group-hover:text-black" />
+              <span className="text-[11px] font-mono font-bold uppercase hidden sm:inline">Voice</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
             </button>
 
             {/* Pomodoro Focus Lock Button */}
