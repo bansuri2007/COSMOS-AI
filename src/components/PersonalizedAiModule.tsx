@@ -169,7 +169,7 @@ What would happen if the assignment \`turn = j\` occurred BEFORE setting \`flag[
 
   const toggleChatListening = () => {
     if (!chatRecognitionRef.current) {
-      alert('Microphone speech recognition is not supported in this browser. Please type your message.');
+      setChatInput((prev) => prev || 'Speech recognition not available in this browser. Please type here.');
       return;
     }
     if (isListeningChat) {
@@ -188,7 +188,7 @@ What would happen if the assignment \`turn = j\` occurred BEFORE setting \`flag[
 
   const toggleDoubtListening = () => {
     if (!doubtRecognitionRef.current) {
-      alert('Microphone speech recognition is not supported in this browser. Please type your doubt.');
+      setDoubtQuestion((prev) => prev || 'Speech recognition not available in this browser. Please type your doubt here.');
       return;
     }
     if (isListeningDoubt) {

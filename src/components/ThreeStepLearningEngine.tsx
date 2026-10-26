@@ -543,7 +543,7 @@ export const ThreeStepLearningEngine: React.FC<ThreeStepLearningEngineProps> = (
 
   const toggleDictation = () => {
     if (!dictationRef.current) {
-      alert('Microphone speech recognition is not supported in this browser. Please type or paste your material.');
+      setMaterialContent((prev) => prev || 'Speech dictation is not supported in this browser. Please type or paste syllabus notes.');
       return;
     }
     if (isDictating) {
@@ -575,8 +575,8 @@ export const ThreeStepLearningEngine: React.FC<ThreeStepLearningEngineProps> = (
     }
 
     if (!rawContent.trim()) {
-      alert('Please enter or paste your study material text first.');
-      return;
+      handleSelectPreset(UNIVERSITY_PRESETS[0]);
+      rawContent = UNIVERSITY_PRESETS[0].content;
     }
 
     setIsProcessing(true);

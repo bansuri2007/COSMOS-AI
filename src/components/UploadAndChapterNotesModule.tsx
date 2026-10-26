@@ -102,9 +102,14 @@ Topics Covered:
   };
 
   const handleProcessMaterial = async () => {
-    if (!materialContent.trim()) {
-      alert('Please paste or upload your study material text first.');
-      return;
+    let contentToProcess = materialContent;
+    if (!contentToProcess.trim()) {
+      loadSampleMaterial();
+      contentToProcess = `Course: Advanced Algorithms & Data Structures (CS 301)
+Topics Covered:
+1. Balanced Binary Search Trees (AVL Trees & Red-Black Trees). Height invariants: AVL guarantees balance factor |h_left - h_right| <= 1, strictly bounding height to 1.44 log2(N). Rotations: Single (LL, RR) and Double (LR, RL) restore invariants in O(1) time after insertions and deletions.
+2. Dynamic Arrays & Amortized Complexity Analysis. When doubling array capacity from N to 2N upon overflow, copying requires O(N) operations. However, using the Accounting Method or Potential Function Phi = 2k - N, the amortized cost per append is O(1).
+3. Common Examination Pitfalls: Conflating worst-case single operation cost O(N) with amortized sequence cost O(1). Failing to update height variables during bottom-up rebalancing. Boundary conditions when deleting root with two children.`;
     }
 
     setIsProcessing(true);
@@ -115,8 +120,8 @@ Topics Covered:
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          title: materialTitle,
-          content: materialContent,
+          title: materialTitle || 'Data Structures: Balanced Search Trees & Amortized Analysis',
+          content: contentToProcess,
           subject: 'University Academic Curriculum',
         }),
       });

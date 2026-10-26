@@ -125,7 +125,7 @@ export const DockedAITutor: React.FC<DockedAITutorProps> = ({
 
   const toggleListening = () => {
     if (!recognitionRef.current) {
-      alert('Speech recognition is not supported in this browser. Please type your question.');
+      setUserQuery((prev) => prev || 'Speech recognition is not supported in this browser. Please type your question.');
       return;
     }
 

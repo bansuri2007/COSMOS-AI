@@ -99,7 +99,7 @@ export const AccessibilityModule: React.FC<AccessibilityModuleProps> = ({
 
   const toggleListening = () => {
     if (!recognitionRef.current) {
-      alert('Speech recognition is not supported in this browser. You can type voice commands below.');
+      setTranscript('Speech recognition is not supported in this browser. You can type commands below.');
       return;
     }
 
