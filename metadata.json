@@ -1,6 +1,8 @@
 {
   "name": "Cosmos AI — University Student Learning & Productivity Platform",
   "description": "AI University Student Learning Platform featuring 3-step learning engine, structured topic-to-subtopic notes, PYQ diagnostic quizzes, mistake remedial analysis, Spotify breaks, and Duolingo-style AI tutor.",
-  "requestFramePermissions": [],
+  "requestFramePermissions": [
+    "microphone"
+  ],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -18,11 +18,20 @@ import {
   RotateCcw,
   HelpCircle,
   Zap,
+  Radio,
 } from 'lucide-react';
 import { pipAudio } from '../utils/audio';
 
 interface BreaksHubProps {
   onXpEarned?: (xp: number) => void;
+}
+
+interface SpotifyItem {
+  title: string;
+  type: 'playlist' | 'track' | 'album';
+  embedId: string;
+  description: string;
+  tag: string;
 }
 
 export const BreaksHub: React.FC<BreaksHubProps> = ({ onXpEarned }) => {
@@ -31,34 +40,178 @@ export const BreaksHub: React.FC<BreaksHubProps> = ({ onXpEarned }) => {
   // ==========================================
   // 1. SPOTIFY STUDY MUSIC STATE
   // ==========================================
-  const SPOTIFY_PRESETS = [
+  const SPOTIFY_PRESETS: SpotifyItem[] = [
     {
       title: 'Lofi Study Beats — Deep Work & Chill',
-      embedId: '0vvXsW14ikJU539KDOZq2B',
-      description: 'Calm, steady bpm lo-fi instrumental hip hop for prolonged deep work sprints.',
+      type: 'playlist',
+      embedId: '37i9dQZF1DWWQRwui0ExPn',
+      description: 'Official Spotify Lofi Cafe with calm, steady bpm instrumental hip hop for prolonged deep work sprints.',
       tag: 'Lo-Fi Chill',
     },
     {
       title: 'Binaural Focus & 432Hz Alpha Waves',
+      type: 'playlist',
       embedId: '37i9dQZF1DXdLEN7aqioXM',
       description: 'Alpha binaural tones to stimulate prefrontal cortex focus and reduce mental fatigue.',
       tag: 'Binaural Beats',
     },
     {
-      title: 'Deep Focus Synthwave & Instrumental Flow',
-      embedId: '37i9dQZF1DX3qCx5IaU84c',
-      description: 'Uplifting retro-modern instrumental flow designed for uninterrupted coding and reading.',
-      tag: 'Synthwave',
+      title: 'Deep Focus — Instrumental Flow',
+      type: 'playlist',
+      embedId: '37i9dQZF1DWZeKCadgRdKQ',
+      description: 'Timeless atmospheric compositions proven to optimize memory consolidation and spatial reasoning.',
+      tag: 'Deep Focus',
     },
     {
-      title: 'Classical Focus: Mozart & Chopin Masterpieces',
-      embedId: '37i9dQZF1DWZeKCadgRdKQ',
-      description: 'Timeless compositions proven to optimize memory consolidation and spatial reasoning.',
-      tag: 'Classical',
+      title: 'Peaceful Piano — Memory & Recall',
+      type: 'playlist',
+      embedId: '37i9dQZF1DX4sWSpwq3LiO',
+      description: 'Gentle classical and contemporary solo piano for calm reading and problem solving.',
+      tag: 'Piano',
+    },
+    {
+      title: 'Brain Food — Electronic Focus',
+      type: 'playlist',
+      embedId: '37i9dQZF1DX8Uebhn9wzrS',
+      description: 'Hypnotic electronic and downtempo beats to maintain deep coding flow state.',
+      tag: 'Electronic',
+    },
+    {
+      title: 'Synthwave Focus — Code & Flow',
+      type: 'playlist',
+      embedId: '37i9dQZF1DX3qCx5IaU84c',
+      description: 'Uplifting retro-modern instrumental flow designed for uninterrupted coding and studying.',
+      tag: 'Synthwave',
     },
   ];
 
-  const [activeSpotifyPlaylist, setActiveSpotifyPlaylist] = useState(SPOTIFY_PRESETS[0]);
+  const [activeSpotifyPlaylist, setActiveSpotifyPlaylist] = useState<SpotifyItem>(SPOTIFY_PRESETS[0]);
+  const [customSpotifyUrl, setCustomSpotifyUrl] = useState('');
+  const [spotifyEmbedError, setSpotifyEmbedError] = useState(false);
+
+  // Web Audio Ambient Synthesizer State (zero-cookie, offline, guaranteed fallback)
+  const [ambientActive, setAmbientActive] = useState<string | null>(null);
+  const [ambientVolume, setAmbientVolume] = useState(0.4);
+  const audioCtxRef = React.useRef<AudioContext | null>(null);
+  const ambientNodesRef = React.useRef<{ osc?: OscillatorNode; gain?: GainNode; noiseSource?: AudioBufferSourceNode } | null>(null);
+
+  const stopAmbient = () => {
+    if (ambientNodesRef.current) {
+      try {
+        if (ambientNodesRef.current.osc) ambientNodesRef.current.osc.stop();
+        if (ambientNodesRef.current.noiseSource) ambientNodesRef.current.noiseSource.stop();
+      } catch (e) {}
+      ambientNodesRef.current = null;
+    }
+    setAmbientActive(null);
+  };
+
+  const playAmbient = (type: 'alpha432' | 'rain' | 'whitenoise' | 'cosmic') => {
+    stopAmbient();
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = audioCtxRef.current || new AudioCtx();
+      audioCtxRef.current = ctx;
+      if (ctx.state === 'suspended') ctx.resume();
+
+      const masterGain = ctx.createGain();
+      masterGain.gain.setValueAtTime(ambientVolume, ctx.currentTime);
+      masterGain.connect(ctx.destination);
+
+      if (type === 'alpha432') {
+        // 432 Hz + 442 Hz (10 Hz alpha binaural difference)
+        const osc1 = ctx.createOscillator();
+        const osc2 = ctx.createOscillator();
+        osc1.type = 'sine';
+        osc2.type = 'sine';
+        osc1.frequency.setValueAtTime(432, ctx.currentTime);
+        osc2.frequency.setValueAtTime(442, ctx.currentTime);
+
+        const oscGain = ctx.createGain();
+        oscGain.gain.setValueAtTime(0.18, ctx.currentTime);
+        osc1.connect(oscGain);
+        osc2.connect(oscGain);
+        oscGain.connect(masterGain);
+
+        osc1.start();
+        osc2.start();
+        ambientNodesRef.current = { osc: osc1, gain: masterGain };
+      } else if (type === 'cosmic') {
+        // Deep space harmonic drone (110Hz + 165Hz)
+        const osc = ctx.createOscillator();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(108, ctx.currentTime);
+        const filter = ctx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(280, ctx.currentTime);
+        osc.connect(filter);
+        filter.connect(masterGain);
+        osc.start();
+        ambientNodesRef.current = { osc, gain: masterGain };
+      } else {
+        // Rain / White noise synthesized buffer
+        const bufferSize = ctx.sampleRate * 2;
+        const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+        const output = noiseBuffer.getChannelData(0);
+        let b0 = 0, b1 = 0, b2 = 0;
+        for (let i = 0; i < bufferSize; i++) {
+          const white = Math.random() * 2 - 1;
+          if (type === 'rain') {
+            // Pink / Brown filter for soft rain
+            b0 = 0.99 * b0 + white * 0.05;
+            output[i] = b0 * 2.5;
+          } else {
+            output[i] = white * 0.15;
+          }
+        }
+        const whiteNoise = ctx.createBufferSource();
+        whiteNoise.buffer = noiseBuffer;
+        whiteNoise.loop = true;
+        const filter = ctx.createBiquadFilter();
+        filter.type = type === 'rain' ? 'lowpass' : 'bandpass';
+        filter.frequency.setValueAtTime(type === 'rain' ? 800 : 1200, ctx.currentTime);
+        whiteNoise.connect(filter);
+        filter.connect(masterGain);
+        whiteNoise.start();
+        ambientNodesRef.current = { noiseSource: whiteNoise, gain: masterGain };
+      }
+
+      setAmbientActive(type);
+    } catch (e) {
+      console.warn('Audio synthesis error:', e);
+    }
+  };
+
+  const handleCustomSpotifySubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!customSpotifyUrl.trim()) return;
+    const raw = customSpotifyUrl.trim();
+
+    // Match Spotify URL formats:
+    // https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M
+    // https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT
+    // https://open.spotify.com/album/1DFixLWuPkv3KT3TnV35m3
+    // spotify:playlist:37i9dQZF1DXcBWIGoYBM5M
+    const urlMatch = raw.match(/open\.spotify\.com\/(playlist|track|album|episode)\/([a-zA-Z0-9]+)/);
+    const uriMatch = raw.match(/spotify:(playlist|track|album|episode):([a-zA-Z0-9]+)/);
+
+    const type = (urlMatch?.[1] || uriMatch?.[1] || 'playlist') as 'playlist' | 'track' | 'album';
+    const id = urlMatch?.[2] || uriMatch?.[2] || raw;
+
+    if (id) {
+      pipAudio.playCelebrate();
+      setActiveSpotifyPlaylist({
+        title: `Custom ${type.toUpperCase()}: ${id.slice(0, 10)}...`,
+        type,
+        embedId: id,
+        description: `Imported directly from user Spotify input: ${raw}`,
+        tag: 'Custom',
+      });
+      setSpotifyEmbedError(false);
+      setCustomSpotifyUrl('');
+    }
+  };
 
   // ==========================================
   // 2. FOREIGN LANGUAGE DUOLINGO-STYLE SPRINT
@@ -473,69 +626,164 @@ export const BreaksHub: React.FC<BreaksHubProps> = ({ onXpEarned }) => {
       </div>
 
       {/* ========================================================================= */}
-      {/* 1. SPOTIFY STUDY MUSIC PLAYER                                             */}
+      {/* 1. SPOTIFY STUDY MUSIC & AMBIENT FOCUS AUDIO                               */}
       {/* ========================================================================= */}
       {activeTab === 'music' && (
         <div className="space-y-6 animate-bubble-pop">
+          {/* Custom Spotify URL Input Bar */}
+          <div className="p-4 rounded-2xl bg-[#040816]/90 border border-emerald-500/30 flex flex-col md:flex-row items-center justify-between gap-3 shadow-xl">
+            <div className="flex items-center gap-2.5 text-xs text-slate-300">
+              <div className="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">
+                <Music size={15} />
+              </div>
+              <div>
+                <span className="font-bold text-white">Custom Spotify Integration</span>
+                <span className="text-[11px] text-slate-400 block">Paste any Spotify playlist, album, or track URL to embed it directly.</span>
+              </div>
+            </div>
+            <form onSubmit={handleCustomSpotifySubmit} className="flex items-center gap-2 w-full md:w-auto">
+              <input
+                type="text"
+                value={customSpotifyUrl}
+                onChange={(e) => setCustomSpotifyUrl(e.target.value)}
+                placeholder="https://open.spotify.com/playlist/..."
+                className="px-3.5 py-1.5 rounded-xl bg-slate-900 border border-white/10 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-400 w-full md:w-80"
+              />
+              <button
+                type="submit"
+                className="px-4 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-bold transition whitespace-nowrap shrink-0 shadow-lg shadow-emerald-500/20"
+              >
+                Load Audio
+              </button>
+            </form>
+          </div>
+
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Playlist Presets */}
             <div className="lg:col-span-1 space-y-3">
-              <h3 className="text-xs font-extrabold text-slate-300 uppercase tracking-widest font-mono">
-                Select Study Vibe:
-              </h3>
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-extrabold text-slate-300 uppercase tracking-widest font-mono">
+                  Select Study Vibe:
+                </h3>
+                <span className="text-[10px] text-emerald-400 font-mono">Live Spotify</span>
+              </div>
               {SPOTIFY_PRESETS.map((item, idx) => (
                 <div
                   key={idx}
                   onClick={() => {
                     pipAudio.playClick();
                     setActiveSpotifyPlaylist(item);
+                    setSpotifyEmbedError(false);
                   }}
-                  className={`p-4 rounded-2xl border cursor-pointer transition space-y-1.5 ${
-                    activeSpotifyPlaylist.title === item.title
-                      ? 'bg-cyan-500/15 border-cyan-400 text-white shadow-lg'
-                      : 'bg-[#030612] border-white/10 hover:border-cyan-500/40 text-slate-300'
+                  className={`p-3.5 rounded-2xl border cursor-pointer transition space-y-1 ${
+                    activeSpotifyPlaylist.embedId === item.embedId
+                      ? 'bg-emerald-500/15 border-emerald-400 text-white shadow-lg'
+                      : 'bg-[#030612] border-white/10 hover:border-emerald-500/40 text-slate-300'
                   }`}
                 >
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold">{item.title}</span>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-900 text-cyan-300 font-mono font-bold">
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-900 text-emerald-300 font-mono font-bold">
                       {item.tag}
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-400 leading-relaxed">{item.description}</p>
                 </div>
               ))}
+
+              {/* Zero-Cookie Web Audio Ambient Generator */}
+              <div className="p-4 rounded-2xl bg-gradient-to-br from-cyan-950/40 to-slate-950 border border-cyan-500/20 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Radio size={14} className="text-cyan-400 animate-pulse" />
+                    <span className="text-xs font-bold text-white">Instant Offline Ambient</span>
+                  </div>
+                  {ambientActive && (
+                    <button
+                      onClick={stopAmbient}
+                      className="text-[10px] text-rose-400 hover:text-rose-300 font-mono underline"
+                    >
+                      Stop
+                    </button>
+                  )}
+                </div>
+                <p className="text-[10px] text-slate-400">Synthesized directly in your browser. No login or third-party cookies required.</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => playAmbient('alpha432')}
+                    className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition text-center ${
+                      ambientActive === 'alpha432'
+                        ? 'bg-cyan-500 text-black border-cyan-400 shadow-md'
+                        : 'bg-black/50 border-white/10 text-slate-300 hover:border-cyan-400'
+                    }`}
+                  >
+                    432Hz Alpha
+                  </button>
+                  <button
+                    onClick={() => playAmbient('rain')}
+                    className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition text-center ${
+                      ambientActive === 'rain'
+                        ? 'bg-cyan-500 text-black border-cyan-400 shadow-md'
+                        : 'bg-black/50 border-white/10 text-slate-300 hover:border-cyan-400'
+                    }`}
+                  >
+                    Gentle Rain
+                  </button>
+                  <button
+                    onClick={() => playAmbient('cosmic')}
+                    className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition text-center ${
+                      ambientActive === 'cosmic'
+                        ? 'bg-cyan-500 text-black border-cyan-400 shadow-md'
+                        : 'bg-black/50 border-white/10 text-slate-300 hover:border-cyan-400'
+                    }`}
+                  >
+                    Cosmic Drone
+                  </button>
+                  <button
+                    onClick={() => playAmbient('whitenoise')}
+                    className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition text-center ${
+                      ambientActive === 'whitenoise'
+                        ? 'bg-cyan-500 text-black border-cyan-400 shadow-md'
+                        : 'bg-black/50 border-white/10 text-slate-300 hover:border-cyan-400'
+                    }`}
+                  >
+                    Focus Noise
+                  </button>
+                </div>
+              </div>
             </div>
 
-            {/* Embedded Spotify Iframe */}
-            <div className="lg:col-span-2 p-6 rounded-3xl bg-[#040816]/95 border border-sky-500/30 shadow-2xl flex flex-col justify-between">
+            {/* Embedded Spotify Player Card */}
+            <div className="lg:col-span-2 p-6 rounded-3xl bg-[#040816]/95 border border-emerald-500/30 shadow-2xl flex flex-col justify-between">
               <div className="flex items-center justify-between pb-4 border-b border-white/10">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-emerald-500 flex items-center justify-center text-black font-bold shadow-lg">
+                  <div className="w-10 h-10 rounded-2xl bg-emerald-500 flex items-center justify-center text-black font-bold shadow-lg shadow-emerald-500/20">
                     <Music size={20} />
                   </div>
                   <div>
                     <h4 className="text-sm font-bold text-white">{activeSpotifyPlaylist.title}</h4>
-                    <p className="text-[11px] text-slate-400 font-mono">Official Spotify Live Audio Stream</p>
+                    <p className="text-[11px] text-slate-400 font-mono">
+                      Spotify {activeSpotifyPlaylist.type.toUpperCase()} • Embedded Study Audio
+                    </p>
                   </div>
                 </div>
 
                 <a
-                  href={`https://open.spotify.com/playlist/${activeSpotifyPlaylist.embedId}`}
+                  href={`https://open.spotify.com/${activeSpotifyPlaylist.type}/${activeSpotifyPlaylist.embedId}`}
                   target="_blank"
                   rel="noreferrer"
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 border border-white/10 text-[11px] font-bold text-emerald-400 hover:text-emerald-300 hover:border-emerald-500/40 transition"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 border border-emerald-500/30 text-[11px] font-bold text-emerald-400 hover:text-emerald-300 hover:border-emerald-400 transition"
                 >
                   Open in Spotify
                   <ExternalLink size={12} />
                 </a>
               </div>
 
-              {/* Responsive Iframe Embed */}
-              <div className="my-5 rounded-2xl overflow-hidden shadow-2xl border border-sky-500/20 bg-black">
+              {/* Responsive Iframe Embed with Verified Path */}
+              <div className="my-5 rounded-2xl overflow-hidden shadow-2xl border border-emerald-500/20 bg-black min-h-[352px]">
                 <iframe
                   title="Spotify Study Player"
-                  src={`https://open.spotify.com/embed/playlist/${activeSpotifyPlaylist.embedId}?utm_source=generator&theme=0`}
+                  src={`https://open.spotify.com/embed/${activeSpotifyPlaylist.type}/${activeSpotifyPlaylist.embedId}?utm_source=generator&theme=0`}
                   width="100%"
                   height="352"
                   frameBorder="0"
@@ -544,11 +792,13 @@ export const BreaksHub: React.FC<BreaksHubProps> = ({ onXpEarned }) => {
                 />
               </div>
 
-              <div className="p-3.5 rounded-2xl bg-[#02050e] border border-white/5 flex items-center gap-2 text-xs text-slate-400">
-                <Sparkles size={14} className="text-cyan-400 shrink-0" />
-                <span>
-                  🎧 <strong>Cognitive Tip:</strong> Keep the volume at 40-50% for background white noise masking without triggering conscious auditory processing.
-                </span>
+              <div className="p-3.5 rounded-2xl bg-[#02050e] border border-white/5 flex items-center justify-between gap-3 text-xs text-slate-400">
+                <div className="flex items-center gap-2">
+                  <Sparkles size={14} className="text-emerald-400 shrink-0" />
+                  <span>
+                    🎧 <strong>Audio Tip:</strong> If Spotify previews only 30s clips, click <em>Open in Spotify</em> or log into your Spotify account in another tab.
+                  </span>
+                </div>
               </div>
             </div>
           </div>

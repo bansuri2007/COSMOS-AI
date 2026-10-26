@@ -31,6 +31,7 @@ import {
   MicOff,
 } from 'lucide-react';
 import { pipAudio } from '../utils/audio';
+import { pipSpeech } from '../utils/speech';
 
 export interface Subtopic {
   id: string;
@@ -542,22 +543,27 @@ export const ThreeStepLearningEngine: React.FC<ThreeStepLearningEngineProps> = (
   }, []);
 
   const toggleDictation = () => {
-    if (!dictationRef.current) {
-      setMaterialContent((prev) => prev || 'Speech dictation is not supported in this browser. Please type or paste syllabus notes.');
+    if (isDictating) {
+      pipSpeech.stopListening();
+      setIsDictating(false);
       return;
     }
-    if (isDictating) {
-      dictationRef.current.stop();
-      setIsDictating(false);
-    } else {
-      pipAudio.playClick();
-      setIsDictating(true);
-      try {
-        dictationRef.current.start();
-      } catch (e) {
+
+    pipAudio.playClick();
+    setIsDictating(true);
+
+    pipSpeech.startListening(
+      (transcript: string, isFinal: boolean) => {
+        setMaterialContent((prev) => (prev ? `${prev} ${transcript}` : transcript));
+        if (isFinal) {
+          setIsDictating(false);
+        }
+      },
+      (err: string) => {
         setIsDictating(false);
+        setMaterialContent((prev) => prev || err);
       }
-    }
+    );
   };
 
   // Helper to load presets

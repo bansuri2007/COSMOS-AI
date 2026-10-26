@@ -56,17 +56,29 @@ export const DockedAITutor: React.FC<DockedAITutorProps> = ({
 }) => {
   const [isOpen, setIsOpen] = useState(true);
   const [isUpgradesOpen, setIsUpgradesOpen] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const [userQuery, setUserQuery] = useState('');
   const [isThinking, setIsThinking] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [emotion, setEmotion] = useState<EmotionState>('coaching');
+  const [micNotice, setMicNotice] = useState<string | null>(null);
+
+  // Multi-turn chat message history
+  const [chatMessages, setChatMessages] = useState<Array<{ role: 'user' | 'tutor'; text: string; time: string; isAi?: boolean }>>([
+    {
+      role: 'tutor',
+      text: `Hi ${userProfile.name || 'Student'}! 🦉 I'm Cosmo, your Gemini-powered academic tutor. Ask me any conceptual question or click the microphone to speak!`,
+      time: 'Now',
+      isAi: true,
+    },
+  ]);
 
   // Duolingo-style proactive coach speech
   const [currentSpeech, setCurrentSpeech] = useState(
-    `Hi ${userProfile.name || 'Student'}! 🦉 Upload your syllabus and I'll give you your amazing to-do list and study planner!`
+    `Hi ${userProfile.name || 'Student'}! 🦉 Ask me any question or upload your syllabus to generate your personalized to-do list!`
   );
   const [followUpQuestion, setFollowUpQuestion] = useState(
-    'What course or exam do you want to conquer today?'
+    'What concept or exam question do you want to conquer right now?'
   );
 
   const COMPANION_IMAGES: Record<CompanionType, string> = {
@@ -76,37 +88,6 @@ export const DockedAITutor: React.FC<DockedAITutorProps> = ({
     owl: '/assets/images/realistic_owl_companion_1793000067209.jpg',
     fox: '/assets/images/realistic_fox_companion_1793000090793.jpg',
   };
-
-  const recognitionRef = useRef<any>(null);
-
-  // Initialize Speech Recognition if supported in browser
-  useEffect(() => {
-    const SpeechRecognition =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (SpeechRecognition) {
-      const recognition = new SpeechRecognition();
-      recognition.continuous = false;
-      recognition.interimResults = false;
-      recognition.lang = 'en-US';
-
-      recognition.onresult = (event: any) => {
-        const transcript = event.results[0][0].transcript;
-        setUserQuery(transcript);
-        setIsListening(false);
-        handleUserSubmitQuery(transcript);
-      };
-
-      recognition.onerror = () => {
-        setIsListening(false);
-      };
-
-      recognition.onend = () => {
-        setIsListening(false);
-      };
-
-      recognitionRef.current = recognition;
-    }
-  }, []);
 
   // Speak welcome on mount
   useEffect(() => {
@@ -123,34 +104,51 @@ export const DockedAITutor: React.FC<DockedAITutorProps> = ({
     }
   }, [initialPrompt]);
 
-  const toggleListening = () => {
-    if (!recognitionRef.current) {
-      setUserQuery((prev) => prev || 'Speech recognition is not supported in this browser. Please type your question.');
+  const toggleListening = async () => {
+    if (isListening) {
+      pipSpeech.stopListening();
+      setIsListening(false);
+      setMicNotice(null);
       return;
     }
 
-    if (isListening) {
-      recognitionRef.current.stop();
-      setIsListening(false);
-    } else {
-      pipAudio.playClick();
-      setIsListening(true);
-      recognitionRef.current.start();
-    }
+    pipAudio.playClick();
+    setMicNotice('🎙️ Listening... Please speak your question now.');
+    setIsListening(true);
+
+    pipSpeech.startListening(
+      (transcript, isFinal) => {
+        setUserQuery(transcript);
+        if (isFinal && transcript.trim()) {
+          setIsListening(false);
+          setMicNotice(null);
+          handleUserSubmitQuery(transcript.trim());
+        }
+      },
+      (error) => {
+        setIsListening(false);
+        setMicNotice(error);
+        setTimeout(() => setMicNotice(null), 4000);
+      }
+    );
   };
 
   const handleUserSubmitQuery = async (queryText: string) => {
-    if (!queryText.trim()) return;
+    if (!queryText.trim() || isThinking) return;
+    const clean = queryText.trim();
+    const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    // Append user question to history
+    setChatMessages((prev) => [...prev, { role: 'user', text: clean, time: now }]);
     setIsThinking(true);
     setEmotion('thinking');
     pipAudio.playThinking();
 
-    const clean = queryText.trim();
-    setCurrentSpeech(`Analyzing "${clean}"... Generating Feynman conceptual breakdown & active to-do items!`);
+    setCurrentSpeech(`Thinking with Gemini 3... Analyzing "${clean}"`);
 
     // Proactively add to To-Do List
     onAddTodoTask({
-      title: `[AI Coach] Review core principles of ${clean}`,
+      title: `[Cosmo AI] Master concept: ${clean}`,
       time: '15 min',
       priority: 'high',
     });
@@ -160,9 +158,8 @@ export const DockedAITutor: React.FC<DockedAITutorProps> = ({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          message: `The student asks: "${clean}".
-Persona: You are ${userProfile.companionName || 'Cosmo'}, an energetic, motivating Duolingo-style academic learning coach and companion.
-Task: Explain the core intuition in 2 clear sentences, provide an encouraging cheer, and suggest testing with the 3-Step Engine or PYQ Quiz.`,
+          message: clean,
+          history: chatMessages.slice(-6).map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', text: m.text })),
           context: {
             currentSubject: clean,
             streak: progress.streakDays,
@@ -173,19 +170,25 @@ Task: Explain the core intuition in 2 clear sentences, provide an encouraging ch
       });
 
       const data = await res.json();
-      const reply =
-        data.reply ||
-        `Great question on ${clean}! The key intuition is mastering boundary invariants first. I've added a 15-minute priority task to your study planner. Ready to launch the 3-Step Engine?`;
+      const reply = data.reply || `Great question on ${clean}! Always ground yourself in boundary invariants first. Ready to take a diagnostic quiz?`;
+
+      // Append tutor response to chat history
+      setChatMessages((prev) => [
+        ...prev,
+        { role: 'tutor', text: reply, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), isAi: data.isAiGenerated ?? true },
+      ]);
 
       setCurrentSpeech(reply);
-      setFollowUpQuestion(`Should we practice a PYQ quiz on ${clean}?`);
+      setFollowUpQuestion(`Would you like me to test you with a diagnostic check on ${clean}?`);
       setEmotion('cheering');
+
       if (ttsEnabled) {
         pipSpeech.speak(reply);
       }
       pipAudio.playCelebrate();
     } catch (e) {
-      const fallback = `Great question on ${clean}! Master the fundamental definition first before diving into edge cases. I've scheduled a high-priority mission in your To-Do list!`;
+      const fallback = `Great question on ${clean}! When analyzing this concept, first establish foundational invariants before looking at edge cases. What specific derivation can I clarify?`;
+      setChatMessages((prev) => [...prev, { role: 'tutor', text: fallback, time: now, isAi: false }]);
       setCurrentSpeech(fallback);
       setEmotion('cheering');
       if (ttsEnabled) pipSpeech.speak(fallback);
@@ -397,18 +400,82 @@ Task: Explain the core intuition in 2 clear sentences, provide an encouraging ch
             </div>
           )}
 
-          {/* Duolingo-style Speech Bubble with Animated Emotion */}
-          <div className="relative p-3.5 rounded-2xl bg-[#02050e] border border-sky-400/20 space-y-2">
-            <div className="flex items-start gap-2">
-              <span className="text-lg">
-                {emotion === 'cheering' ? '🌟' : emotion === 'thinking' ? '💡' : emotion === 'celebrating' ? '🎉' : '🦉'}
-              </span>
-              <p className="text-xs text-slate-200 leading-relaxed font-medium">{currentSpeech}</p>
-            </div>
-            {followUpQuestion && (
-              <p className="text-xs text-cyan-300 font-bold pl-7">{followUpQuestion}</p>
-            )}
+          {/* Toggle Conversation View vs Single Speech Bubble */}
+          <div className="flex items-center justify-between text-[11px] px-1">
+            <button
+              type="button"
+              onClick={() => setShowHistory(!showHistory)}
+              className="text-cyan-400 hover:text-cyan-300 font-bold flex items-center gap-1 transition"
+            >
+              <MessageSquare size={13} />
+              <span>{showHistory ? 'Show Coach Bubble' : `View Full Chat (${chatMessages.length})`}</span>
+            </button>
+            <span className="text-[10px] text-slate-500 font-mono">Gemini 3.1 Pro / Lite</span>
           </div>
+
+          {/* Full Conversation Thread OR Duolingo-style Speech Bubble */}
+          {showHistory ? (
+            <div className="max-h-56 overflow-y-auto space-y-2 p-3 rounded-2xl bg-[#02050e] border border-sky-400/20 text-xs">
+              {chatMessages.map((msg, idx) => (
+                <div
+                  key={idx}
+                  className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'} space-y-1`}
+                >
+                  <div
+                    className={`p-2.5 rounded-2xl max-w-[90%] text-xs leading-relaxed ${
+                      msg.role === 'user'
+                        ? 'bg-gradient-to-r from-sky-500 to-cyan-500 text-black font-semibold'
+                        : 'bg-[#050b1d] border border-sky-500/20 text-slate-200'
+                    }`}
+                  >
+                    <p className="whitespace-pre-line">{msg.text}</p>
+                  </div>
+                  <span className="text-[9px] text-slate-500 px-1 font-mono">{msg.time}</span>
+                </div>
+              ))}
+              {isThinking && (
+                <div className="text-[11px] text-cyan-300 animate-pulse flex items-center gap-1.5 p-1">
+                  <Sparkles size={12} className="animate-spin" />
+                  <span>Cosmo is writing an answer...</span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="relative p-3.5 rounded-2xl bg-[#02050e] border border-sky-400/20 space-y-2">
+              <div className="flex items-start gap-2">
+                <span className="text-lg">
+                  {emotion === 'cheering' ? '🌟' : emotion === 'thinking' ? '💡' : emotion === 'celebrating' ? '🎉' : '🦉'}
+                </span>
+                <p className="text-xs text-slate-200 leading-relaxed font-medium">{currentSpeech}</p>
+              </div>
+              {followUpQuestion && (
+                <p className="text-xs text-cyan-300 font-bold pl-7">{followUpQuestion}</p>
+              )}
+            </div>
+          )}
+
+          {/* Live Microphone Recording Banner */}
+          {isListening && (
+            <div className="p-2.5 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-300 text-xs flex items-center justify-between animate-pulse">
+              <div className="flex items-center gap-2">
+                <Mic size={14} className="animate-bounce" />
+                <span className="font-bold">Listening to your voice... Speak your doubt!</span>
+              </div>
+              <button
+                type="button"
+                onClick={toggleListening}
+                className="text-[10px] bg-rose-500 text-white px-2 py-0.5 rounded-md font-bold"
+              >
+                Stop
+              </button>
+            </div>
+          )}
+
+          {micNotice && !isListening && (
+            <div className="p-2 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[11px] leading-tight">
+              {micNotice}
+            </div>
+          )}
 
           {/* Proactive Quick Action Buttons (Jump straight to 3-Step Engine, Doubt Clearing, Breaks) */}
           <div className="grid grid-cols-2 gap-2">
@@ -469,7 +536,7 @@ Task: Explain the core intuition in 2 clear sentences, provide an encouraging ch
                 type="text"
                 value={userQuery}
                 onChange={(e) => setUserQuery(e.target.value)}
-                placeholder="Ask your tutor anything or describe a topic..."
+                placeholder="Ask Cosmo any university question or doubt..."
                 disabled={isThinking}
                 className="flex-1 bg-[#02050e] border border-sky-500/30 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400"
               />
@@ -499,18 +566,21 @@ Task: Explain the core intuition in 2 clear sentences, provide an encouraging ch
 
             {/* Quick Topic Presets */}
             <div className="flex items-center gap-1 overflow-x-auto pb-1 text-[10px] no-scrollbar">
-              {['Virtual Memory', 'Raft Consensus', 'Cellular ATP', 'Convex Optimization'].map(
-                (preset) => (
-                  <button
-                    key={preset}
-                    type="button"
-                    onClick={() => handleUserSubmitQuery(preset)}
-                    className="px-2 py-0.5 rounded-lg bg-[#02050e] border border-white/10 text-slate-400 hover:text-white hover:border-cyan-400 whitespace-nowrap transition"
-                  >
-                    + {preset}
-                  </button>
-                )
-              )}
+              {[
+                'Explain Binary Search O(log n)',
+                'What is Peterson Algorithm?',
+                '4 Deadlock Conditions',
+                'Master Theorem Case 2',
+              ].map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  onClick={() => handleUserSubmitQuery(preset)}
+                  className="px-2 py-0.5 rounded-lg bg-[#02050e] border border-white/10 text-slate-400 hover:text-white hover:border-cyan-400 whitespace-nowrap transition"
+                >
+                  + {preset}
+                </button>
+              ))}
             </div>
           </form>
         </div>

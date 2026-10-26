@@ -98,24 +98,29 @@ export const AccessibilityModule: React.FC<AccessibilityModuleProps> = ({
   }, []);
 
   const toggleListening = () => {
-    if (!recognitionRef.current) {
-      setTranscript('Speech recognition is not supported in this browser. You can type commands below.');
+    if (isListening) {
+      pipSpeech.stopListening();
+      setIsListening(false);
       return;
     }
 
-    if (isListening) {
-      recognitionRef.current.stop();
-      setIsListening(false);
-    } else {
-      pipAudio.playClick();
-      setTranscript('');
-      setIsListening(true);
-      try {
-        recognitionRef.current.start();
-      } catch (e) {
+    pipAudio.playClick();
+    setTranscript('');
+    setIsListening(true);
+
+    pipSpeech.startListening(
+      (text, isFinal) => {
+        setTranscript(text);
+        if (isFinal && text.trim()) {
+          setIsListening(false);
+          handleExecuteVoiceCommand(text.trim());
+        }
+      },
+      (err) => {
         setIsListening(false);
+        setTranscript(err);
       }
-    }
+    );
   };
 
   const handleExecuteVoiceCommand = async (commandText: string) => {

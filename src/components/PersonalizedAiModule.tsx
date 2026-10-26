@@ -167,42 +167,51 @@ What would happen if the assignment \`turn = j\` occurred BEFORE setting \`flag[
     }
   }, []);
 
-  const toggleChatListening = () => {
-    if (!chatRecognitionRef.current) {
-      setChatInput((prev) => prev || 'Speech recognition not available in this browser. Please type here.');
+  const toggleChatListening = async () => {
+    if (isListeningChat) {
+      pipSpeech.stopListening();
+      setIsListeningChat(false);
       return;
     }
-    if (isListeningChat) {
-      chatRecognitionRef.current.stop();
-      setIsListeningChat(false);
-    } else {
-      pipAudio.playClick();
-      setIsListeningChat(true);
-      try {
-        chatRecognitionRef.current.start();
-      } catch (e) {
+    pipAudio.playClick();
+    setIsListeningChat(true);
+
+    pipSpeech.startListening(
+      (transcript, isFinal) => {
+        setChatInput(transcript);
+        if (isFinal && transcript.trim()) {
+          setIsListeningChat(false);
+          handleSendSpokenQuery(transcript.trim());
+        }
+      },
+      (err) => {
         setIsListeningChat(false);
+        setChatInput(err);
       }
-    }
+    );
   };
 
-  const toggleDoubtListening = () => {
-    if (!doubtRecognitionRef.current) {
-      setDoubtQuestion((prev) => prev || 'Speech recognition not available in this browser. Please type your doubt here.');
+  const toggleDoubtListening = async () => {
+    if (isListeningDoubt) {
+      pipSpeech.stopListening();
+      setIsListeningDoubt(false);
       return;
     }
-    if (isListeningDoubt) {
-      doubtRecognitionRef.current.stop();
-      setIsListeningDoubt(false);
-    } else {
-      pipAudio.playClick();
-      setIsListeningDoubt(true);
-      try {
-        doubtRecognitionRef.current.start();
-      } catch (e) {
+    pipAudio.playClick();
+    setIsListeningDoubt(true);
+
+    pipSpeech.startListening(
+      (transcript, isFinal) => {
+        setDoubtQuestion(transcript);
+        if (isFinal && transcript.trim()) {
+          setIsListeningDoubt(false);
+        }
+      },
+      (err) => {
         setIsListeningDoubt(false);
+        setDoubtQuestion(err);
       }
-    }
+    );
   };
 
   // Generate Study Plan
@@ -234,7 +243,7 @@ What would happen if the assignment \`turn = j\` occurred BEFORE setting \`flag[
     }
   };
 
-  // Clear Doubt
+  // Clear Doubt with Gemini API
   const handleClearDoubt = async () => {
     if (!doubtQuestion.trim()) return;
     setIsDoubtLoading(true);
@@ -245,8 +254,8 @@ What would happen if the assignment \`turn = j\` occurred BEFORE setting \`flag[
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          question: doubtQuestion,
-          subject: doubtSubject,
+          question: doubtQuestion.trim(),
+          subject: doubtSubject.trim() || 'University Course',
           studentLevel: 'Undergraduate',
         }),
       });
@@ -255,10 +264,13 @@ What would happen if the assignment \`turn = j\` occurred BEFORE setting \`flag[
       if (data.explanation) {
         setDoubtResponse(data.explanation);
         pipAudio.playGreeting();
-        pipSpeech.speak('I have broken down your doubt using simple intuition, step-by-step proofs, and common traps.');
+        pipSpeech.speak('Here is the Socratic breakdown for your doubt.');
+      } else {
+        setDoubtResponse(`💡 **Analysis on "${doubtQuestion}"**:\n\n1. Anchor in fundamental boundary invariants.\n2. Verify state transitions monotonically converge toward termination.\n3. Be alert to edge cases.`);
       }
     } catch (e) {
       console.error('Doubt error:', e);
+      setDoubtResponse(`💡 **Analysis on "${doubtQuestion}"**:\n\n1. Anchor in fundamental boundary invariants.\n2. Verify state transitions monotonically converge toward termination.\n3. Be alert to edge cases.`);
     } finally {
       setIsDoubtLoading(false);
     }
@@ -587,8 +599,8 @@ What would happen if the assignment \`turn = j\` occurred BEFORE setting \`flag[
                 />
               </div>
 
-              <div className="md:col-span-2">
-                <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5">
+              <div className="md:col-span-2 space-y-1.5">
+                <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider">
                   Your Conceptual Question or Doubt
                 </label>
                 <input
@@ -599,6 +611,33 @@ What would happen if the assignment \`turn = j\` occurred BEFORE setting \`flag[
                   className="w-full bg-[#02050e] border border-sky-500/30 rounded-2xl px-4 py-3 text-xs md:text-sm text-white focus:outline-none focus:border-cyan-400"
                 />
               </div>
+            </div>
+
+            {/* Quick Doubt Topic Presets */}
+            <div className="flex items-center gap-1.5 overflow-x-auto py-1 text-xs no-scrollbar">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider shrink-0 font-mono">
+                Sample Doubts:
+              </span>
+              {[
+                { title: 'Peterson Algorithm & Memory Barriers', sub: 'Operating Systems' },
+                { title: 'Why Quicksort degrades to O(N^2) on sorted data', sub: 'Algorithms' },
+                { title: 'Master Theorem: Case 2 vs Case 3 boundary conditions', sub: 'Algorithms' },
+                { title: 'Chemiosmotic ATP Synthase proton-motive force', sub: 'Biochemistry' },
+                { title: 'Deadlock 4 Coffman conditions and prevention', sub: 'Operating Systems' },
+              ].map((item, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => {
+                    pipAudio.playClick();
+                    setDoubtSubject(item.sub);
+                    setDoubtQuestion(item.title);
+                  }}
+                  className="px-2.5 py-1 rounded-xl bg-[#02050e] border border-white/10 hover:border-cyan-400 text-slate-300 hover:text-white whitespace-nowrap text-[11px] transition"
+                >
+                  {item.title}
+                </button>
+              ))}
             </div>
 
             <div className="flex justify-end pt-2">
@@ -623,18 +662,33 @@ What would happen if the assignment \`turn = j\` occurred BEFORE setting \`flag[
                   </div>
                   <div>
                     <h4 className="text-sm font-bold text-white">Socratic Conceptual Breakdown</h4>
-                    <span className="text-[10px] text-cyan-400 font-mono">Structured Feynman Analysis</span>
+                    <span className="text-[10px] text-cyan-400 font-mono">Structured Feynman Analysis • Powered by Gemini</span>
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => pipSpeech.speak(doubtResponse.replace(/[#*`]/g, ''))}
-                  className="px-3 py-1.5 rounded-xl bg-[#02050e] border border-white/10 text-cyan-300 hover:text-white text-xs flex items-center gap-1.5 transition"
-                >
-                  <Volume2 size={13} />
-                  <span>Listen Aloud</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (typeof navigator !== 'undefined' && navigator.clipboard) {
+                        navigator.clipboard.writeText(doubtResponse);
+                        pipAudio.playClick();
+                      }
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-[#02050e] border border-white/10 text-slate-300 hover:text-white text-xs flex items-center gap-1.5 transition"
+                    title="Copy breakdown to clipboard"
+                  >
+                    <span>Copy</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => pipSpeech.speak(doubtResponse.replace(/[#*`]/g, ''))}
+                    className="px-3 py-1.5 rounded-xl bg-cyan-500/20 border border-cyan-400/40 text-cyan-300 hover:text-white text-xs flex items-center gap-1.5 transition"
+                  >
+                    <Volume2 size={13} />
+                    <span>Listen Aloud</span>
+                  </button>
+                </div>
               </div>
 
               <div className="prose prose-invert max-w-none text-xs md:text-sm text-slate-200 leading-relaxed space-y-3 whitespace-pre-line font-sans">

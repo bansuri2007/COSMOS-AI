@@ -109,19 +109,61 @@ class PipSpeechEngine {
     }
   }
 
+  public async requestMicrophonePermission(): Promise<{ granted: boolean; message: string }> {
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      return { granted: false, message: 'Microphone API is not supported in this browser environment.' };
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Stop tracks immediately so we don't hold the mic open until recording starts
+      stream.getTracks().forEach((track) => track.stop());
+      return { granted: true, message: 'Microphone access granted!' };
+    } catch (err: any) {
+      console.warn('Microphone permission error:', err);
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        return { granted: false, message: 'Microphone permission was denied. Please allow microphone access in your browser settings.' };
+      }
+      return { granted: false, message: `Could not access microphone: ${err.message || 'Permission denied'}` };
+    }
+  }
+
+  public hasSpeechRecognition(): boolean {
+    if (typeof window === 'undefined') return false;
+    return Boolean((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
+  }
+
   /**
-   * Listen to user speech from microphone
+   * Listen to user speech from microphone with explicit permission and fallbacks
    */
-  public startListening(
+  public async startListening(
     onResult: (transcript: string, isFinal: boolean) => void,
     onError?: (error: string) => void
   ) {
-    if (!this.recognition) {
-      if (onError) onError('Speech recognition not supported in this browser.');
+    if (typeof window === 'undefined') return;
+
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      if (onError) onError('Speech recognition is not supported in this browser. You can type or use sample questions.');
       return;
     }
 
+    // Proactively request mic stream first to prompt browser dialog if needed
+    const perm = await this.requestMicrophonePermission();
+    if (!perm.granted && onError) {
+      // Still attempt recognition as some browsers handle permission within recognition.start()
+      console.info('getUserMedia notice:', perm.message);
+    }
+
     try {
+      if (!this.recognition) {
+        this.recognition = new SpeechRecognition();
+      }
+      this.recognition.continuous = false;
+      this.recognition.interimResults = true;
+      this.recognition.lang = 'en-US';
+
       this.isListening = true;
       this.recognition.onresult = (event: any) => {
         let interim = '';
@@ -146,7 +188,14 @@ class PipSpeechEngine {
 
       this.recognition.onerror = (event: any) => {
         this.isListening = false;
-        if (onError) onError(event.error || 'Recognition error');
+        const errType = event?.error || 'Recognition error';
+        if (errType === 'not-allowed') {
+          if (onError) onError('Microphone access blocked. Please enable mic permissions in your browser address bar.');
+        } else if (errType === 'no-speech') {
+          if (onError) onError('No speech detected. Please speak closer to your microphone.');
+        } else {
+          if (onError) onError(`Speech recognition: ${errType}`);
+        }
       };
 
       this.recognition.onend = () => {
@@ -156,7 +205,7 @@ class PipSpeechEngine {
       this.recognition.start();
     } catch (e: any) {
       this.isListening = false;
-      if (onError) onError(e.message || 'Failed to start mic');
+      if (onError) onError(e.message || 'Failed to start microphone recognition.');
     }
   }
 
